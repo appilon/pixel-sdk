@@ -1,0 +1,14 @@
+.{
+    .name = .pixel_sdk,
+    .version = "0.1.0",
+    .fingerprint = 0x1c5a298cf1a365c2,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "AGENTS.md",
+        "README.md",
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
