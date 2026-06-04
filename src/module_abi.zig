@@ -96,8 +96,8 @@ pub const ModuleApi = extern struct {
     abi_version: u32,
     struct_size: u32,
     module_context: ?*anyopaque,
-    update: UpdateFn,
-    render_view: RenderViewFn,
+    update: ?UpdateFn,
+    render_view: ?RenderViewFn,
 };
 
 pub const QueryFn = *const fn (
