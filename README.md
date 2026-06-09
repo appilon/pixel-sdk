@@ -27,3 +27,8 @@ zig build test
 service to `HostApi`. Modules that use the service require a host with the full
 `HostApi` size and non-null `websocket_open`, `websocket_close`,
 `websocket_send`, and `websocket_poll` callbacks.
+
+The `v0.2.0` release keeps ABI version `1` and appends an optional host-owned
+PCM16 capture and playback service. Audio clients request an exact sample rate
+and channel count, poll captured bytes, submit playback bytes, and can clear
+queued playback for realtime interruption.

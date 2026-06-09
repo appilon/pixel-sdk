@@ -22,6 +22,7 @@ pub const ResourceType = enum(u32) {
 };
 
 pub const invalid_websocket_id: u32 = std.math.maxInt(u32);
+pub const invalid_audio_id: u32 = std.math.maxInt(u32);
 
 pub const VkInstance = ?*anyopaque;
 pub const VkPhysicalDevice = ?*anyopaque;
@@ -121,6 +122,85 @@ pub const WebSocketPollFn = *const fn (
     output_capacity: u32,
 ) callconv(.c) WebSocketPollResult;
 
+pub const AudioSampleFormat = enum(u32) {
+    pcm_s16_le = 1,
+};
+
+pub const AudioOpenStatus = enum(u32) {
+    ok = 0,
+    invalid_argument = 1,
+    unavailable = 2,
+    already_open = 3,
+};
+
+pub const AudioPollStatus = enum(u32) {
+    empty = 0,
+    data = 1,
+    closed = 2,
+    invalid_handle = 3,
+};
+
+pub const AudioSubmitStatus = enum(u32) {
+    ok = 0,
+    invalid_handle = 1,
+    closed = 2,
+    queue_full = 3,
+    invalid_data = 4,
+};
+
+pub const AudioHandle = extern struct {
+    id: u32,
+    generation: u32,
+};
+
+pub const AudioOpenInfo = extern struct {
+    sample_rate_hz: u32,
+    channel_count: u32,
+    frames_per_chunk: u32,
+    format: AudioSampleFormat,
+    flags: u32,
+};
+
+pub const AudioOpenResult = extern struct {
+    status: AudioOpenStatus,
+    handle: AudioHandle,
+};
+
+pub const AudioPollResult = extern struct {
+    status: AudioPollStatus,
+    bytes_written: u32,
+    bytes_available: u32,
+};
+
+pub const AudioOpenFn = *const fn (
+    userdata: ?*anyopaque,
+    info: *const AudioOpenInfo,
+) callconv(.c) AudioOpenResult;
+
+pub const AudioCloseFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: AudioHandle,
+) callconv(.c) void;
+
+pub const AudioCapturePollFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: AudioHandle,
+    output: [*]u8,
+    output_capacity: u32,
+) callconv(.c) AudioPollResult;
+
+pub const AudioPlaybackSubmitFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: AudioHandle,
+    data: [*]const u8,
+    length: u32,
+) callconv(.c) AudioSubmitStatus;
+
+pub const AudioPlaybackClearFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: AudioHandle,
+) callconv(.c) void;
+
 pub const HostApi = extern struct {
     abi_version: u32,
     struct_size: u32,
@@ -137,6 +217,11 @@ pub const HostApi = extern struct {
     websocket_close: ?WebSocketCloseFn,
     websocket_send: ?WebSocketSendFn,
     websocket_poll: ?WebSocketPollFn,
+    audio_open: ?AudioOpenFn,
+    audio_close: ?AudioCloseFn,
+    audio_capture_poll: ?AudioCapturePollFn,
+    audio_playback_submit: ?AudioPlaybackSubmitFn,
+    audio_playback_clear: ?AudioPlaybackClearFn,
 };
 
 pub const FrameInfo = extern struct {
@@ -195,23 +280,35 @@ test "ABI enums use explicit 32-bit backing" {
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(WebSocketMessageKind));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(WebSocketSendStatus));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(WebSocketPollStatus));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioSampleFormat));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioOpenStatus));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioPollStatus));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioSubmitStatus));
 }
 
 test "ABI structs have stable 64-bit layouts" {
     if (@sizeOf(usize) != 8) return error.SkipZigTest;
 
-    try std.testing.expectEqual(@as(usize, 112), @sizeOf(HostApi));
+    try std.testing.expectEqual(@as(usize, 152), @sizeOf(HostApi));
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(FrameInfo));
     try std.testing.expectEqual(@as(usize, 152), @sizeOf(ViewRenderContext));
     try std.testing.expectEqual(@as(usize, 32), @sizeOf(ModuleApi));
     try std.testing.expectEqual(@as(usize, 8), @sizeOf(WebSocketHandle));
     try std.testing.expectEqual(@as(usize, 32), @sizeOf(WebSocketOpenInfo));
     try std.testing.expectEqual(@as(usize, 16), @sizeOf(WebSocketPollResult));
+    try std.testing.expectEqual(@as(usize, 8), @sizeOf(AudioHandle));
+    try std.testing.expectEqual(@as(usize, 20), @sizeOf(AudioOpenInfo));
+    try std.testing.expectEqual(@as(usize, 12), @sizeOf(AudioOpenResult));
+    try std.testing.expectEqual(@as(usize, 12), @sizeOf(AudioPollResult));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(HostApi));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ModuleApi));
     try std.testing.expectEqual(@as(usize, 4), @alignOf(WebSocketHandle));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(WebSocketOpenInfo));
     try std.testing.expectEqual(@as(usize, 4), @alignOf(WebSocketPollResult));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(AudioHandle));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(AudioOpenInfo));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(AudioOpenResult));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(AudioPollResult));
 }
 
 test "compatibility requires matching version and sufficient size" {
@@ -226,6 +323,12 @@ test "compatibility requires matching version and sufficient size" {
 
 test "invalid websocket handle sentinel is outside valid websocket ids" {
     const invalid = WebSocketHandle{ .id = invalid_websocket_id, .generation = 0 };
+    try std.testing.expectEqual(std.math.maxInt(u32), invalid.id);
+    try std.testing.expectEqual(@as(u32, 0), invalid.generation);
+}
+
+test "invalid audio handle sentinel is outside valid audio ids" {
+    const invalid = AudioHandle{ .id = invalid_audio_id, .generation = 0 };
     try std.testing.expectEqual(std.math.maxInt(u32), invalid.id);
     try std.testing.expectEqual(@as(u32, 0), invalid.generation);
 }
