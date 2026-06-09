@@ -21,6 +21,8 @@ pub const ResourceType = enum(u32) {
     pipeline = 4,
 };
 
+pub const invalid_websocket_id: u32 = std.math.maxInt(u32);
+
 pub const VkInstance = ?*anyopaque;
 pub const VkPhysicalDevice = ?*anyopaque;
 pub const VkDevice = ?*anyopaque;
@@ -51,6 +53,74 @@ pub const LogFn = *const fn (
     message_length: u32,
 ) callconv(.c) void;
 
+pub const WebSocketMessageKind = enum(u32) {
+    text = 1,
+    binary = 2,
+};
+
+pub const WebSocketSendStatus = enum(u32) {
+    ok = 0,
+    invalid_handle = 1,
+    closed = 2,
+    queue_full = 3,
+    message_too_large = 4,
+};
+
+pub const WebSocketPollStatus = enum(u32) {
+    empty = 0,
+    message = 1,
+    truncated = 2,
+    closed = 3,
+    invalid_handle = 4,
+    error_state = 5,
+};
+
+pub const WebSocketHandle = extern struct {
+    id: u32,
+    generation: u32,
+};
+
+pub const WebSocketOpenInfo = extern struct {
+    host: ?[*:0]const u8,
+    path: ?[*:0]const u8,
+    port: u16,
+    tls: u32,
+    max_message_bytes: u32,
+    flags: u32,
+};
+
+pub const WebSocketPollResult = extern struct {
+    status: WebSocketPollStatus,
+    kind: WebSocketMessageKind,
+    bytes_written: u32,
+    bytes_available: u32,
+};
+
+pub const WebSocketOpenFn = *const fn (
+    userdata: ?*anyopaque,
+    info: *const WebSocketOpenInfo,
+) callconv(.c) WebSocketHandle;
+
+pub const WebSocketCloseFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: WebSocketHandle,
+) callconv(.c) void;
+
+pub const WebSocketSendFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: WebSocketHandle,
+    kind: WebSocketMessageKind,
+    data: [*]const u8,
+    length: u32,
+) callconv(.c) WebSocketSendStatus;
+
+pub const WebSocketPollFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: WebSocketHandle,
+    output: [*]u8,
+    output_capacity: u32,
+) callconv(.c) WebSocketPollResult;
+
 pub const HostApi = extern struct {
     abi_version: u32,
     struct_size: u32,
@@ -63,6 +133,10 @@ pub const HostApi = extern struct {
     vk_physical_device: VkPhysicalDevice,
     vk_device: VkDevice,
     render_pass: VkRenderPass,
+    websocket_open: ?WebSocketOpenFn,
+    websocket_close: ?WebSocketCloseFn,
+    websocket_send: ?WebSocketSendFn,
+    websocket_poll: ?WebSocketPollFn,
 };
 
 pub const FrameInfo = extern struct {
@@ -118,17 +192,26 @@ pub fn moduleCompatible(module_api: *const ModuleApi) bool {
 test "ABI enums use explicit 32-bit backing" {
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(Result));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(ResourceType));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(WebSocketMessageKind));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(WebSocketSendStatus));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(WebSocketPollStatus));
 }
 
 test "ABI structs have stable 64-bit layouts" {
     if (@sizeOf(usize) != 8) return error.SkipZigTest;
 
-    try std.testing.expectEqual(@as(usize, 80), @sizeOf(HostApi));
+    try std.testing.expectEqual(@as(usize, 112), @sizeOf(HostApi));
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(FrameInfo));
     try std.testing.expectEqual(@as(usize, 152), @sizeOf(ViewRenderContext));
     try std.testing.expectEqual(@as(usize, 32), @sizeOf(ModuleApi));
+    try std.testing.expectEqual(@as(usize, 8), @sizeOf(WebSocketHandle));
+    try std.testing.expectEqual(@as(usize, 32), @sizeOf(WebSocketOpenInfo));
+    try std.testing.expectEqual(@as(usize, 16), @sizeOf(WebSocketPollResult));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(HostApi));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ModuleApi));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(WebSocketHandle));
+    try std.testing.expectEqual(@as(usize, 8), @alignOf(WebSocketOpenInfo));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(WebSocketPollResult));
 }
 
 test "compatibility requires matching version and sufficient size" {
@@ -139,4 +222,10 @@ test "compatibility requires matching version and sufficient size" {
 
     host_api.abi_version += 1;
     try std.testing.expect(!hostCompatible(&host_api));
+}
+
+test "invalid websocket handle sentinel is outside valid websocket ids" {
+    const invalid = WebSocketHandle{ .id = invalid_websocket_id, .generation = 0 };
+    try std.testing.expectEqual(std.math.maxInt(u32), invalid.id);
+    try std.testing.expectEqual(@as(u32, 0), invalid.generation);
 }

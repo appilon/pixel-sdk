@@ -20,3 +20,10 @@ Run the ABI layout and compatibility tests with:
 ```bash
 zig build test
 ```
+
+## Releases
+
+`v0.1.0` keeps ABI version `1` and appends the optional host-owned websocket
+service to `HostApi`. Modules that use the service require a host with the full
+`HostApi` size and non-null `websocket_open`, `websocket_close`,
+`websocket_send`, and `websocket_poll` callbacks.
