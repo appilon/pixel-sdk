@@ -1,6 +1,6 @@
 .{
     .name = .pixel_sdk,
-    .version = "0.2.0",
+    .version = "0.3.0",
     .fingerprint = 0x1c5a298cf1a365c2,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},

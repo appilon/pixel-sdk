@@ -81,6 +81,15 @@ pub const WebSocketHandle = extern struct {
     generation: u32,
 };
 
+pub const invalid_websocket_handle = WebSocketHandle{
+    .id = invalid_websocket_id,
+    .generation = 0,
+};
+
+pub fn websocketHandleValid(handle: WebSocketHandle) bool {
+    return handle.id != invalid_websocket_id;
+}
+
 pub const WebSocketOpenInfo = extern struct {
     host: ?[*:0]const u8,
     path: ?[*:0]const u8,
@@ -153,6 +162,15 @@ pub const AudioHandle = extern struct {
     generation: u32,
 };
 
+pub const invalid_audio_handle = AudioHandle{
+    .id = invalid_audio_id,
+    .generation = 0,
+};
+
+pub fn audioHandleValid(handle: AudioHandle) bool {
+    return handle.id != invalid_audio_id;
+}
+
 pub const AudioOpenInfo = extern struct {
     sample_rate_hz: u32,
     channel_count: u32,
@@ -213,20 +231,26 @@ pub const HostApi = extern struct {
     vk_physical_device: VkPhysicalDevice,
     vk_device: VkDevice,
     render_pass: VkRenderPass,
-    websocket_open: ?WebSocketOpenFn,
-    websocket_close: ?WebSocketCloseFn,
-    websocket_send: ?WebSocketSendFn,
-    websocket_poll: ?WebSocketPollFn,
-    audio_open: ?AudioOpenFn,
-    audio_close: ?AudioCloseFn,
-    audio_capture_poll: ?AudioCapturePollFn,
-    audio_playback_submit: ?AudioPlaybackSubmitFn,
-    audio_playback_clear: ?AudioPlaybackClearFn,
+    websocket_open: WebSocketOpenFn,
+    websocket_close: WebSocketCloseFn,
+    websocket_send: WebSocketSendFn,
+    websocket_poll: WebSocketPollFn,
+    audio_open: AudioOpenFn,
+    audio_close: AudioCloseFn,
+    audio_capture_poll: AudioCapturePollFn,
+    audio_playback_submit: AudioPlaybackSubmitFn,
+    audio_playback_clear: AudioPlaybackClearFn,
 };
 
 pub const FrameInfo = extern struct {
     frame_index: u64,
     predicted_display_time_ns: i64,
+    delta_time_ns: u64,
+};
+
+pub const UpdateInfo = extern struct {
+    tick_index: u64,
+    time_ns: i64,
     delta_time_ns: u64,
 };
 
@@ -242,6 +266,15 @@ pub const ViewRenderContext = extern struct {
 
 pub const UpdateFn = *const fn (
     module_context: ?*anyopaque,
+    update: *const UpdateInfo,
+) callconv(.c) void;
+
+pub const ShutdownFn = *const fn (
+    module_context: ?*anyopaque,
+) callconv(.c) void;
+
+pub const PrepareRenderFn = *const fn (
+    module_context: ?*anyopaque,
     frame: *const FrameInfo,
 ) callconv(.c) void;
 
@@ -255,8 +288,10 @@ pub const ModuleApi = extern struct {
     abi_version: u32,
     struct_size: u32,
     module_context: ?*anyopaque,
-    update: ?UpdateFn,
-    render_view: ?RenderViewFn,
+    update: UpdateFn,
+    render_view: RenderViewFn,
+    shutdown: ShutdownFn,
+    prepare_render: PrepareRenderFn,
 };
 
 pub const QueryFn = *const fn (
@@ -266,12 +301,12 @@ pub const QueryFn = *const fn (
 
 pub fn hostCompatible(host_api: *const HostApi) bool {
     return host_api.abi_version == abi_version and
-        host_api.struct_size >= @sizeOf(HostApi);
+        host_api.struct_size == @sizeOf(HostApi);
 }
 
 pub fn moduleCompatible(module_api: *const ModuleApi) bool {
     return module_api.abi_version == abi_version and
-        module_api.struct_size >= @sizeOf(ModuleApi);
+        module_api.struct_size == @sizeOf(ModuleApi);
 }
 
 test "ABI enums use explicit 32-bit backing" {
@@ -291,8 +326,13 @@ test "ABI structs have stable 64-bit layouts" {
 
     try std.testing.expectEqual(@as(usize, 152), @sizeOf(HostApi));
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(FrameInfo));
+    try std.testing.expectEqual(@as(usize, 24), @sizeOf(UpdateInfo));
     try std.testing.expectEqual(@as(usize, 152), @sizeOf(ViewRenderContext));
-    try std.testing.expectEqual(@as(usize, 32), @sizeOf(ModuleApi));
+    try std.testing.expectEqual(@as(usize, 48), @sizeOf(ModuleApi));
+    try std.testing.expectEqual(@as(usize, 16), @offsetOf(ModuleApi, "update"));
+    try std.testing.expectEqual(@as(usize, 24), @offsetOf(ModuleApi, "render_view"));
+    try std.testing.expectEqual(@as(usize, 32), @offsetOf(ModuleApi, "shutdown"));
+    try std.testing.expectEqual(@as(usize, 40), @offsetOf(ModuleApi, "prepare_render"));
     try std.testing.expectEqual(@as(usize, 8), @sizeOf(WebSocketHandle));
     try std.testing.expectEqual(@as(usize, 32), @sizeOf(WebSocketOpenInfo));
     try std.testing.expectEqual(@as(usize, 16), @sizeOf(WebSocketPollResult));
@@ -311,24 +351,48 @@ test "ABI structs have stable 64-bit layouts" {
     try std.testing.expectEqual(@as(usize, 4), @alignOf(AudioPollResult));
 }
 
-test "compatibility requires matching version and sufficient size" {
+test "compatibility requires exact version and size" {
     var host_api: HostApi = undefined;
     host_api.abi_version = abi_version;
     host_api.struct_size = @sizeOf(HostApi);
     try std.testing.expect(hostCompatible(&host_api));
 
+    host_api.struct_size -= 1;
+    try std.testing.expect(!hostCompatible(&host_api));
+
+    host_api.struct_size = @sizeOf(HostApi) + 1;
+    try std.testing.expect(!hostCompatible(&host_api));
+
+    host_api.struct_size = @sizeOf(HostApi);
     host_api.abi_version += 1;
     try std.testing.expect(!hostCompatible(&host_api));
+
+    var module_api: ModuleApi = undefined;
+    module_api.abi_version = abi_version;
+    module_api.struct_size = @sizeOf(ModuleApi);
+    try std.testing.expect(moduleCompatible(&module_api));
+
+    module_api.struct_size = 32;
+    try std.testing.expect(!moduleCompatible(&module_api));
+
+    module_api.struct_size = @sizeOf(ModuleApi) + 1;
+    try std.testing.expect(!moduleCompatible(&module_api));
+
+    module_api.struct_size = @sizeOf(ModuleApi);
+    module_api.abi_version += 1;
+    try std.testing.expect(!moduleCompatible(&module_api));
 }
 
 test "invalid websocket handle sentinel is outside valid websocket ids" {
-    const invalid = WebSocketHandle{ .id = invalid_websocket_id, .generation = 0 };
-    try std.testing.expectEqual(std.math.maxInt(u32), invalid.id);
-    try std.testing.expectEqual(@as(u32, 0), invalid.generation);
+    try std.testing.expectEqual(std.math.maxInt(u32), invalid_websocket_handle.id);
+    try std.testing.expectEqual(@as(u32, 0), invalid_websocket_handle.generation);
+    try std.testing.expect(!websocketHandleValid(invalid_websocket_handle));
+    try std.testing.expect(websocketHandleValid(.{ .id = 0, .generation = 1 }));
 }
 
 test "invalid audio handle sentinel is outside valid audio ids" {
-    const invalid = AudioHandle{ .id = invalid_audio_id, .generation = 0 };
-    try std.testing.expectEqual(std.math.maxInt(u32), invalid.id);
-    try std.testing.expectEqual(@as(u32, 0), invalid.generation);
+    try std.testing.expectEqual(std.math.maxInt(u32), invalid_audio_handle.id);
+    try std.testing.expectEqual(@as(u32, 0), invalid_audio_handle.generation);
+    try std.testing.expect(!audioHandleValid(invalid_audio_handle));
+    try std.testing.expect(audioHandleValid(.{ .id = 0, .generation = 1 }));
 }
