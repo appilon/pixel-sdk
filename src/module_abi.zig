@@ -23,6 +23,7 @@ pub const ResourceType = enum(u32) {
 
 pub const invalid_websocket_id: u32 = std.math.maxInt(u32);
 pub const invalid_audio_id: u32 = std.math.maxInt(u32);
+pub const invalid_capture_id: u32 = std.math.maxInt(u32);
 
 pub const VkInstance = ?*anyopaque;
 pub const VkPhysicalDevice = ?*anyopaque;
@@ -131,6 +132,16 @@ pub const WebSocketPollFn = *const fn (
     output_capacity: u32,
 ) callconv(.c) WebSocketPollResult;
 
+pub const WebSocketSendPartsFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: WebSocketHandle,
+    kind: WebSocketMessageKind,
+    first: [*]const u8,
+    first_length: u32,
+    second: [*]const u8,
+    second_length: u32,
+) callconv(.c) WebSocketSendStatus;
+
 pub const AudioSampleFormat = enum(u32) {
     pcm_s16_le = 1,
 };
@@ -219,6 +230,81 @@ pub const AudioPlaybackClearFn = *const fn (
     handle: AudioHandle,
 ) callconv(.c) void;
 
+pub const CaptureFormat = enum(u32) {
+    jpeg = 1,
+};
+
+pub const CaptureOpenStatus = enum(u32) {
+    ok = 0,
+    invalid_argument = 1,
+    unavailable = 2,
+    already_open = 3,
+};
+
+pub const CapturePollStatus = enum(u32) {
+    empty = 0,
+    data = 1,
+    closed = 2,
+    invalid_handle = 3,
+};
+
+pub const CaptureHandle = extern struct {
+    id: u32,
+    generation: u32,
+};
+
+pub const invalid_capture_handle = CaptureHandle{
+    .id = invalid_capture_id,
+    .generation = 0,
+};
+
+pub fn captureHandleValid(handle: CaptureHandle) bool {
+    return handle.id != invalid_capture_id;
+}
+
+pub const CaptureOpenInfo = extern struct {
+    width: u32,
+    height: u32,
+    interval_ms: u32,
+    quality: u32,
+    max_bytes: u32,
+    format: CaptureFormat,
+    flags: u32,
+};
+
+pub const CaptureOpenResult = extern struct {
+    status: CaptureOpenStatus,
+    handle: CaptureHandle,
+};
+
+pub const CapturePollResult = extern struct {
+    status: CapturePollStatus,
+    format: CaptureFormat,
+    data: ?[*]const u8,
+    length: u32,
+    width: u32,
+    height: u32,
+    reserved: u32,
+    sequence: u64,
+    timestamp_ns: i64,
+};
+
+pub const CaptureOpenFn = *const fn (
+    userdata: ?*anyopaque,
+    info: *const CaptureOpenInfo,
+) callconv(.c) CaptureOpenResult;
+
+pub const CaptureCloseFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: CaptureHandle,
+) callconv(.c) void;
+
+// The returned data remains immutable until the next poll for this handle.
+pub const CapturePollFn = *const fn (
+    userdata: ?*anyopaque,
+    handle: CaptureHandle,
+) callconv(.c) CapturePollResult;
+
 pub const HostApi = extern struct {
     abi_version: u32,
     struct_size: u32,
@@ -240,6 +326,10 @@ pub const HostApi = extern struct {
     audio_capture_poll: AudioCapturePollFn,
     audio_playback_submit: AudioPlaybackSubmitFn,
     audio_playback_clear: AudioPlaybackClearFn,
+    websocket_send_parts: WebSocketSendPartsFn,
+    capture_open: CaptureOpenFn,
+    capture_close: CaptureCloseFn,
+    capture_poll: CapturePollFn,
 };
 
 pub const FrameInfo = extern struct {
@@ -319,12 +409,15 @@ test "ABI enums use explicit 32-bit backing" {
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioOpenStatus));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioPollStatus));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioSubmitStatus));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(CaptureFormat));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(CaptureOpenStatus));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(CapturePollStatus));
 }
 
 test "ABI structs have stable 64-bit layouts" {
     if (@sizeOf(usize) != 8) return error.SkipZigTest;
 
-    try std.testing.expectEqual(@as(usize, 152), @sizeOf(HostApi));
+    try std.testing.expectEqual(@as(usize, 184), @sizeOf(HostApi));
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(FrameInfo));
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(UpdateInfo));
     try std.testing.expectEqual(@as(usize, 152), @sizeOf(ViewRenderContext));
@@ -340,6 +433,17 @@ test "ABI structs have stable 64-bit layouts" {
     try std.testing.expectEqual(@as(usize, 20), @sizeOf(AudioOpenInfo));
     try std.testing.expectEqual(@as(usize, 12), @sizeOf(AudioOpenResult));
     try std.testing.expectEqual(@as(usize, 12), @sizeOf(AudioPollResult));
+    try std.testing.expectEqual(@as(usize, 8), @sizeOf(CaptureHandle));
+    try std.testing.expectEqual(@as(usize, 28), @sizeOf(CaptureOpenInfo));
+    try std.testing.expectEqual(@as(usize, 12), @sizeOf(CaptureOpenResult));
+    try std.testing.expectEqual(@as(usize, 48), @sizeOf(CapturePollResult));
+    try std.testing.expectEqual(@as(usize, 152), @offsetOf(HostApi, "websocket_send_parts"));
+    try std.testing.expectEqual(@as(usize, 160), @offsetOf(HostApi, "capture_open"));
+    try std.testing.expectEqual(@as(usize, 168), @offsetOf(HostApi, "capture_close"));
+    try std.testing.expectEqual(@as(usize, 176), @offsetOf(HostApi, "capture_poll"));
+    try std.testing.expectEqual(@as(usize, 8), @offsetOf(CapturePollResult, "data"));
+    try std.testing.expectEqual(@as(usize, 32), @offsetOf(CapturePollResult, "sequence"));
+    try std.testing.expectEqual(@as(usize, 40), @offsetOf(CapturePollResult, "timestamp_ns"));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(HostApi));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ModuleApi));
     try std.testing.expectEqual(@as(usize, 4), @alignOf(WebSocketHandle));
@@ -349,6 +453,10 @@ test "ABI structs have stable 64-bit layouts" {
     try std.testing.expectEqual(@as(usize, 4), @alignOf(AudioOpenInfo));
     try std.testing.expectEqual(@as(usize, 4), @alignOf(AudioOpenResult));
     try std.testing.expectEqual(@as(usize, 4), @alignOf(AudioPollResult));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(CaptureHandle));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(CaptureOpenInfo));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(CaptureOpenResult));
+    try std.testing.expectEqual(@as(usize, 8), @alignOf(CapturePollResult));
 }
 
 test "compatibility requires exact version and size" {

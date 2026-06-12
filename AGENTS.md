@@ -33,6 +33,10 @@ loops, module examples, and build containers belong in consumer repositories.
 `snapshot_exchange` is a single-producer, single-consumer latest-value triple
 buffer. Do not broaden it into a general queue or multi-writer primitive.
 
+`module_log` owns the allocation-free native module event envelope. Keep rich
+domain telemetry in its owning host or module rather than growing a generic
+metrics framework in the SDK.
+
 ## TigerStyle
 
 [TigerBeetle's TigerStyle](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md)

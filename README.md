@@ -31,6 +31,8 @@ Modules must synchronize state shared by `update` and rendering. The exported
 single-producer, single-consumer `snapshot_exchange` helper provides a
 latest-value triple buffer for that boundary. The `time` helper contains the
 shared monotonic-clock and sleep operations used by native consumers.
+`module_log` emits allocation-free structured lifecycle events through the
+host logger.
 
 Run the ABI layout and compatibility tests with:
 
@@ -48,7 +50,13 @@ playback. Audio clients request an exact sample rate and channel count, poll
 captured bytes, submit playback bytes, and can clear queued playback for
 realtime interruption.
 
-Current `v0.3.0` development keeps ABI version `1`, preserves all existing
+The `v0.3.0` release keeps ABI version `1`, preserves all existing
 field offsets, and appends `shutdown` and `prepare_render` to `ModuleApi`.
 `update` now receives an independent monotonic tick through `UpdateInfo`. All
 host services and module callbacks in the current table are mandatory.
+
+The `v0.4.0` release adds a bounded JPEG capture service and a two-part
+websocket send operation. Capture polling borrows the newest immutable payload
+until the next poll, allowing modules to prepend protocol bytes without a large
+module allocation or payload copy. It also exports allocation-free structured
+logging helpers for hosts and modules.
