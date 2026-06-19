@@ -4,9 +4,15 @@
 
 `pixel-sdk` owns the stable, C-compatible contract shared by independent Pixel
 hosts and modules, plus small reusable native helpers that enforce shared
-concurrency or timing behavior. Keep the ABI platform-neutral and the helpers
-free of host policy. Android, OpenXR, Vulkan headers, host loaders, render
-loops, module examples, and build containers belong in consumer repositories.
+concurrency, timing, and logging behavior. Keep the helpers free of host policy.
+Android, OpenXR, host loaders, render loops, module examples, and build
+containers belong in consumer repositories.
+
+The current ABI is not fully graphics-backend-neutral. It is C-compatible and
+portable as a binary contract, but it intentionally exposes Vulkan handles for
+the current Quest host. Another Vulkan host can consume it directly. A Metal,
+WebGPU, or software host needs a deliberate future graphics contract rather
+than pretending these opaque handles are universal.
 
 ## ABI Rules
 
@@ -17,12 +23,9 @@ loops, module examples, and build containers belong in consumer repositories.
   lockstep and require the complete current ABI.
 - Require exact `abi_version` and `struct_size` matches. Do not add
   backward-compatibility branches for unpublished modules.
-- Append fields when practical so layouts remain easy to audit.
 - Never expose Zig allocators, slices, errors, or implementation-specific types.
 - Keep every ABI callback mandatory and non-null. Consumers that need no work
   for a callback must provide a no-op implementation.
-- Preserve the existing callback offsets and append lifecycle hooks at the end
-  of `ModuleApi`.
 - Treat `update` as worker-thread activity that may overlap
   `prepare_render`/`render_view`.
 - Keep `prepare_render` and `render_view` bounded and allocation-free.
@@ -36,6 +39,19 @@ buffer. Do not broaden it into a general queue or multi-writer primitive.
 `module_log` owns the allocation-free native module event envelope. Keep rich
 domain telemetry in its owning host or module rather than growing a generic
 metrics framework in the SDK.
+
+Transport capacities are consumer policy. The ABI uses explicitly sized `u32`
+lengths and requested capacities but does not prescribe kilobyte- or megabyte-
+scale limits. Hosts must clamp requests to documented fixed budgets; modules
+must handle capacity and queue rejection. Do not add Pixel Quest's current
+64 KiB websocket, 256 KiB capture, or 3 MiB load-arena policy to this portable
+SDK.
+
+Current SDK helpers:
+
+- `snapshot_exchange`: latest-value triple buffer for update/render handoff.
+- `time`: shared monotonic-clock and sleep helpers.
+- `module_log`: allocation-free structured module log envelope.
 
 ## TigerStyle
 
