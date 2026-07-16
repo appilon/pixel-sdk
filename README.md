@@ -5,7 +5,7 @@ modules. It also contains small reusable native helpers whose correctness is
 shared across consumers. It intentionally contains no host implementation,
 Android lifecycle, OpenXR loop, model provider logic, or module framework.
 
-The current ABI version is `1`. The current Git release is `v0.5.0`. Those are
+The current ABI version is `1`. The current Git release is `v0.6.0`. Those are
 separate: Git tags describe SDK source releases, while `abi_version` describes
 runtime binary compatibility.
 
