@@ -5,7 +5,7 @@ modules. It also contains small reusable native helpers whose correctness is
 shared across consumers. It intentionally contains no host implementation,
 Android lifecycle, OpenXR loop, model provider logic, or module framework.
 
-The current ABI version is `1`. The current Git release is `v0.6.0`. Those are
+The current ABI version is `1`. The current Git release is `v0.7.0`. Those are
 separate: Git tags describe SDK source releases, while `abi_version` describes
 runtime binary compatibility.
 
@@ -25,8 +25,9 @@ services, and four mandatory module lifecycle callbacks:
 - `update` runs on a host-owned worker independently of rendering.
 - `prepare_render` latches immutable state once for a rendered frame.
 - `render_view` records each host-provided view sequentially.
-- `shutdown` quiesces module activity before resources are destroyed or code is
-  unloaded.
+- `shutdown` runs after update callbacks stop and prior GPU submissions complete,
+  but before tracked resources are destroyed or module code is unloaded. Modules
+  may destroy their own untracked dynamic GPU resources here.
 
 Every callback is mandatory. Modules provide a no-op implementation when a
 phase needs no work, allowing hosts to call the ABI directly without capability

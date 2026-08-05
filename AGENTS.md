@@ -29,8 +29,8 @@ than pretending these opaque handles are universal.
 - Treat `update` as worker-thread activity that may overlap
   `prepare_render`/`render_view`.
 - Keep `prepare_render` and `render_view` bounded and allocation-free.
-- Require `shutdown` before host resources are destroyed or module code is
-  unloaded.
+- Require the host to stop updates and complete prior GPU submissions before
+  `shutdown`; call it before tracked resources are destroyed or code is unloaded.
 - Host services must preserve host ownership and reject unsupported phases.
 
 `snapshot_exchange` is a single-producer, single-consumer latest-value triple
@@ -52,6 +52,37 @@ Current SDK helpers:
 - `snapshot_exchange`: latest-value triple buffer for update/render handoff.
 - `time`: shared monotonic-clock and sleep helpers.
 - `module_log`: allocation-free structured module log envelope.
+
+## Renderer Boundary
+
+Renderer selection, model-authored visual artifacts, and the Node-to-module
+wire format are application protocol. They currently belong to
+`pixel-harness`, not this SDK or the native ABI. Do not add mesh, STL, SDF,
+shader-source, provider, visual-ID, or scene concepts to `module_abi`.
+
+The existing callback lifecycle is the shared mechanism needed for atomic
+renderer switching:
+
+- `update` may receive and prepare a complete candidate while rendering uses
+  the current revision.
+- `prepare_render` may latch one completed revision at the host's frame-safe
+  boundary.
+- Every `render_view` call for that frame must consume the same immutable
+  revision.
+- Failed or incomplete candidates must not disturb the last valid revision.
+
+This does not require an ABI change. Move a visual artifact envelope or helper
+into the SDK only after multiple independent modules or hosts use the same
+fixed-width contract and its limits are understood.
+
+`track_resource` is for bounded persistent resources registered during module
+load; it is not an unbounded retirement queue for every live-authored Vulkan
+pipeline revision. Do not weaken that rule for shader experiments. A host may
+provide a stronger frame-fence guarantee, as Pixel Quest does, allowing a module
+to retire replaced resources on its update side after atomic activation. The
+host must complete all GPU work before `shutdown` so remaining module-owned
+dynamic resources can be destroyed there. Add an explicit deferred-retirement
+ABI service only if a future host cannot provide those guarantees.
 
 ## TigerStyle
 

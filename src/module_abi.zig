@@ -359,6 +359,8 @@ pub const UpdateFn = *const fn (
     update: *const UpdateInfo,
 ) callconv(.c) void;
 
+// The host stops update callbacks and completes prior GPU submissions before shutdown.
+// Modules may destroy their untracked dynamic GPU resources during this callback.
 pub const ShutdownFn = *const fn (
     module_context: ?*anyopaque,
 ) callconv(.c) void;
