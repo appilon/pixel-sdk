@@ -5,7 +5,7 @@ modules. It also contains small reusable native helpers whose correctness is
 shared across consumers. It intentionally contains no host implementation,
 Android lifecycle, OpenXR loop, model provider logic, or module framework.
 
-The current ABI version is `1`. The current Git release is `v0.7.0`. Those are
+The current ABI version is `1`. The current Git release is `v0.8.0`. Those are
 separate: Git tags describe SDK source releases, while `abi_version` describes
 runtime binary compatibility.
 
@@ -35,8 +35,9 @@ checks. During pre-release development, compatibility requires an exact ABI
 version and exact host/module table size.
 
 Current host services cover bounded module allocation, structured logging,
-tracked Vulkan resource teardown, websocket transport, PCM16 audio, JPEG
-capture, and two-part websocket sends for prepended protocol bytes.
+tracked Vulkan resource teardown, websocket transport, PCM16 audio, typed
+bounded capture sources, and two-part websocket sends for prepended protocol
+bytes.
 
 The ABI is C-compatible but currently Vulkan-oriented. Another Vulkan host can
 consume it directly. A non-Vulkan host needs a deliberate future graphics

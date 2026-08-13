@@ -231,7 +231,14 @@ pub const AudioPlaybackClearFn = *const fn (
 ) callconv(.c) void;
 
 pub const CaptureFormat = enum(u32) {
-    jpeg = 1,
+    i420 = 1,
+    rgba8 = 2,
+    bgra8 = 3,
+};
+
+pub const CaptureSource = enum(u32) {
+    passthrough_camera = 1,
+    application_view = 2,
 };
 
 pub const CaptureOpenStatus = enum(u32) {
@@ -263,6 +270,7 @@ pub fn captureHandleValid(handle: CaptureHandle) bool {
 }
 
 pub const CaptureOpenInfo = extern struct {
+    source: CaptureSource,
     width: u32,
     height: u32,
     interval_ms: u32,
@@ -412,6 +420,7 @@ test "ABI enums use explicit 32-bit backing" {
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioPollStatus));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(AudioSubmitStatus));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(CaptureFormat));
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(CaptureSource));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(CaptureOpenStatus));
     try std.testing.expectEqual(@as(usize, 4), @sizeOf(CapturePollStatus));
 }
@@ -436,7 +445,7 @@ test "ABI structs have stable 64-bit layouts" {
     try std.testing.expectEqual(@as(usize, 12), @sizeOf(AudioOpenResult));
     try std.testing.expectEqual(@as(usize, 12), @sizeOf(AudioPollResult));
     try std.testing.expectEqual(@as(usize, 8), @sizeOf(CaptureHandle));
-    try std.testing.expectEqual(@as(usize, 28), @sizeOf(CaptureOpenInfo));
+    try std.testing.expectEqual(@as(usize, 32), @sizeOf(CaptureOpenInfo));
     try std.testing.expectEqual(@as(usize, 12), @sizeOf(CaptureOpenResult));
     try std.testing.expectEqual(@as(usize, 48), @sizeOf(CapturePollResult));
     try std.testing.expectEqual(@as(usize, 152), @offsetOf(HostApi, "websocket_send_parts"));

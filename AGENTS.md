@@ -44,8 +44,8 @@ Transport capacities are consumer policy. The ABI uses explicitly sized `u32`
 lengths and requested capacities but does not prescribe kilobyte- or megabyte-
 scale limits. Hosts must clamp requests to documented fixed budgets; modules
 must handle capacity and queue rejection. Do not add Pixel Quest's current
-64 KiB websocket, 256 KiB capture, or 3 MiB load-arena policy to this portable
-SDK.
+64 KiB websocket, multi-megabyte capture, or 3 MiB load-arena policy to this
+portable SDK.
 
 Current SDK helpers:
 
