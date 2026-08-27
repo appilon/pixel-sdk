@@ -313,6 +313,49 @@ pub const CapturePollFn = *const fn (
     handle: CaptureHandle,
 ) callconv(.c) CapturePollResult;
 
+pub const left_hand_index: usize = 0;
+pub const right_hand_index: usize = 1;
+pub const hand_count: usize = right_hand_index + 1;
+pub const hand_active_bit: u32 = 1 << 0;
+pub const hand_pose_valid_bit: u32 = 1 << 1;
+pub const hand_linear_velocity_valid_bit: u32 = 1 << 2;
+pub const hand_angular_velocity_valid_bit: u32 = 1 << 3;
+pub const hand_pinch_valid_bit: u32 = 1 << 4;
+
+pub const HandInput = extern struct {
+    position: [3]f32,
+    orientation: [4]f32,
+    linear_velocity: [3]f32,
+    angular_velocity: [3]f32,
+    pinch_position: [3]f32,
+    pinch_strength: f32,
+    flags: u32,
+};
+
+pub const empty_hand_input = HandInput{
+    .position = .{ 0, 0, 0 },
+    .orientation = .{ 0, 0, 0, 1 },
+    .linear_velocity = .{ 0, 0, 0 },
+    .angular_velocity = .{ 0, 0, 0 },
+    .pinch_position = .{ 0, 0, 0 },
+    .pinch_strength = 0,
+    .flags = 0,
+};
+
+pub const InputState = extern struct {
+    sample_time_ns: i64,
+    hands: [hand_count]HandInput,
+};
+
+pub const empty_input_state = InputState{
+    .sample_time_ns = 0,
+    .hands = .{empty_hand_input} ** hand_count,
+};
+
+pub fn handFlag(input: HandInput, bit: u32) bool {
+    return input.flags & bit != 0;
+}
+
 pub const HostApi = extern struct {
     abi_version: u32,
     struct_size: u32,
@@ -350,6 +393,7 @@ pub const UpdateInfo = extern struct {
     tick_index: u64,
     time_ns: i64,
     delta_time_ns: u64,
+    input: InputState,
 };
 
 pub const ViewRenderContext = extern struct {
@@ -430,7 +474,9 @@ test "ABI structs have stable 64-bit layouts" {
 
     try std.testing.expectEqual(@as(usize, 184), @sizeOf(HostApi));
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(FrameInfo));
-    try std.testing.expectEqual(@as(usize, 24), @sizeOf(UpdateInfo));
+    try std.testing.expectEqual(@as(usize, 176), @sizeOf(UpdateInfo));
+    try std.testing.expectEqual(@as(usize, 72), @sizeOf(HandInput));
+    try std.testing.expectEqual(@as(usize, 152), @sizeOf(InputState));
     try std.testing.expectEqual(@as(usize, 152), @sizeOf(ViewRenderContext));
     try std.testing.expectEqual(@as(usize, 48), @sizeOf(ModuleApi));
     try std.testing.expectEqual(@as(usize, 16), @offsetOf(ModuleApi, "update"));
@@ -468,6 +514,18 @@ test "ABI structs have stable 64-bit layouts" {
     try std.testing.expectEqual(@as(usize, 4), @alignOf(CaptureOpenInfo));
     try std.testing.expectEqual(@as(usize, 4), @alignOf(CaptureOpenResult));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(CapturePollResult));
+    try std.testing.expectEqual(@as(usize, 4), @alignOf(HandInput));
+    try std.testing.expectEqual(@as(usize, 8), @alignOf(InputState));
+}
+
+test "normalized hand flags are explicit and empty input is inert" {
+    try std.testing.expect(!handFlag(empty_hand_input, hand_active_bit));
+    var hand = empty_hand_input;
+    hand.flags = hand_active_bit | hand_pinch_valid_bit;
+    try std.testing.expect(handFlag(hand, hand_active_bit));
+    try std.testing.expect(handFlag(hand, hand_pinch_valid_bit));
+    try std.testing.expect(!handFlag(hand, hand_pose_valid_bit));
+    try std.testing.expectEqual(@as(f32, 1), hand.orientation[3]);
 }
 
 test "compatibility requires exact version and size" {

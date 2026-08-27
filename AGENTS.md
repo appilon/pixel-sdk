@@ -1,127 +1,68 @@
-# Repository Guidelines
+# Agent Instructions
+
+Read [`README.md`](README.md) before changing code. It is the shared human/agent
+reference for the ABI, lifecycle, host services, helper semantics, consumption,
+tests, and versioning. Keep descriptive contract documentation there; do not
+duplicate it in this file.
 
 ## Scope
 
-`pixel-sdk` owns the stable, C-compatible contract shared by independent Pixel
-hosts and modules, plus small reusable native helpers that enforce shared
-concurrency, timing, and logging behavior. Keep the helpers free of host policy.
-Android, OpenXR, host loaders, render loops, module examples, and build
-containers belong in consumer repositories.
+`pixel-sdk` owns only the stable native contract and small mechanics proven
+useful across independent hosts or modules. Keep Android, OpenXR, host loaders,
+render loops, model providers, application protocols, renderer kinds, visual
+IDs, mesh/SDF formats, scene policy, and consumer capacity budgets out of it.
 
-The current ABI is not fully graphics-backend-neutral. It is C-compatible and
-portable as a binary contract, but it intentionally exposes Vulkan handles for
-the current Quest host. Another Vulkan host can consume it directly. A Metal,
-WebGPU, or software host needs a deliberate future graphics contract rather
-than pretending these opaque handles are universal.
+Change the ABI only for a genuinely shared host/module capability. Add a helper
+only when it removes real duplication without importing consumer policy.
 
 ## ABI Rules
 
 - Preserve explicit integer sizes, `extern struct` layouts, and `.c` calling
-  conventions.
-- Treat `abi_version` as runtime binary compatibility, independent of Git tags.
-- Until public distribution begins, update the SDK, host, and all modules in
-  lockstep and require the complete current ABI.
-- Require exact `abi_version` and `struct_size` matches. Do not add
-  backward-compatibility branches for unpublished modules.
-- Never expose Zig allocators, slices, errors, or implementation-specific types.
-- Keep every ABI callback mandatory and non-null. Consumers that need no work
-  for a callback must provide a no-op implementation.
-- Treat `update` as worker-thread activity that may overlap
-  `prepare_render`/`render_view`.
-- Keep `prepare_render` and `render_view` bounded and allocation-free.
-- Require the host to stop updates and complete prior GPU submissions before
-  `shutdown`; call it before tracked resources are destroyed or code is unloaded.
-- Host services must preserve host ownership and reject unsupported phases.
+  conventions. Never expose Zig allocators, slices, errors, or implementation
+  types.
+- Treat `abi_version` independently from Git tags.
+- Require exact ABI version and table-size matches while all consumers move in
+  lockstep. Do not add unpublished compatibility branches.
+- Keep every callback mandatory and non-null; unused phases use no-ops.
+- Treat `update` as worker activity that may overlap rendering. Keep
+  `prepare_render` and `render_view` bounded and allocation-free.
+- Preserve normalized input validity bits and explicit left/right indexes. Do
+  not leak OpenXR enums or host gesture/physics policy.
+- Keep host service ownership explicit. Hosts clamp capacities and reject
+  unsupported phases; modules must handle rejection.
+- Keep `track_resource` bounded and load-phase-only. Temporary or replaceable
+  resources remain module-owned.
 
-`snapshot_exchange` is a single-producer, single-consumer latest-value triple
-buffer. Do not broaden it into a general queue or multi-writer primitive.
+`snapshot_exchange` stays a single-producer, single-consumer latest-value
+exchange, not a general queue. `module_log` stays an allocation-free envelope,
+not a generic metrics framework. Transport capacities remain consumer policy.
 
-`module_log` owns the allocation-free native module event envelope. Keep rich
-domain telemetry in its owning host or module rather than growing a generic
-metrics framework in the SDK.
-
-Transport capacities are consumer policy. The ABI uses explicitly sized `u32`
-lengths and requested capacities but does not prescribe kilobyte- or megabyte-
-scale limits. Hosts must clamp requests to documented fixed budgets; modules
-must handle capacity and queue rejection. Do not add Pixel Quest's current
-64 KiB websocket, multi-megabyte capture, or 3 MiB load-arena policy to this
-portable SDK.
-
-Current SDK helpers:
-
-- `snapshot_exchange`: latest-value triple buffer for update/render handoff.
-- `time`: shared monotonic-clock and sleep helpers.
-- `module_log`: allocation-free structured module log envelope.
-
-## Renderer Boundary
-
-Renderer selection, model-authored visual artifacts, and the Node-to-module
-wire format are application protocol. They currently belong to
-`pixel-harness`, not this SDK or the native ABI. Do not add mesh, STL, SDF,
-shader-source, provider, visual-ID, or scene concepts to `module_abi`.
-
-The existing callback lifecycle is the shared mechanism needed for atomic
-renderer switching:
-
-- `update` may receive and prepare a complete candidate while rendering uses
-  the current revision.
-- `prepare_render` may latch one completed revision at the host's frame-safe
-  boundary.
-- Every `render_view` call for that frame must consume the same immutable
-  revision.
-- Failed or incomplete candidates must not disturb the last valid revision.
-
-This does not require an ABI change. Move a visual artifact envelope or helper
-into the SDK only after multiple independent modules or hosts use the same
-fixed-width contract and its limits are understood.
-
-`track_resource` is for bounded persistent resources registered during module
-load; it is not an unbounded retirement queue for every live-authored Vulkan
-pipeline revision. Do not weaken that rule for shader experiments. A host may
-provide a stronger frame-fence guarantee, as Pixel Quest does, allowing a module
-to retire replaced resources on its update side after atomic activation. The
-host must complete all GPU work before `shutdown` so remaining module-owned
-dynamic resources can be destroyed there. Add an explicit deferred-retirement
-ABI service only if a future host cannot provide those guarantees.
-
-## TigerStyle
+## Engineering
 
 [TigerBeetle's TigerStyle](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md)
-is the north star. Apply its priorities in order: safety, performance, then
-developer experience. Design before implementation and fix discovered debt
-before building on it.
+sets the priority order: safety, performance, then developer experience.
 
-Core rules:
+- Prefer explicit control flow, fixed limits, minimal abstractions, and no
+  recursion in runtime helpers.
+- Assert invariants and test minimum, maximum, valid, invalid, layout, and
+  compatibility boundaries.
+- Use explicitly sized integers for ABI and persistent state.
+- Keep functions under 70 lines and lines under 100 columns where practical.
+- Follow Zig naming conventions and document ownership or intentional ABI
+  constraints. Keep dependencies minimal and pinned.
 
-- Prefer simple, explicit control flow, minimal excellent abstractions, and no
-  recursion.
-- Put fixed limits on queues, loops, resources, views, and work per frame.
-- Assert invariants and handle every operational error. Test valid and invalid
-  boundaries.
-- Use explicitly sized integers in ABI and persistent state. Keep `usize` at
-  unavoidable language or platform boundaries.
-- Perform no dynamic allocation in the frame/render data path. Bounded
-  allocation during startup, module load, or reload is control-plane work and
-  must be explicit.
-- Keep functions at most 70 lines and lines at most 100 columns. Run `zig fmt`
-  and use four-space indentation.
-- Use `snake_case` for files and variables, `camelCase` for functions, and
-  `PascalCase` for types. Avoid abbreviations; suffix units and qualifiers,
-  such as `frame_time_ns_max`.
-- Explain why and how in complete-sentence comments. Keep dependencies and
-  tooling minimal; prefer Zig for new repository tooling.
+Zig 0.16 is the source of truth, not older model memory. Inspect the pinned
+compiler and bundled standard library when APIs are uncertain. Never use
+`@cImport`; translate owned C headers with `addTranslateC`. Use explicit I/O,
+allocator-explicit containers, explicit `root_module` build modules, and
+extern/fixed-width ABI types.
 
-Document any deliberate TigerStyle deviation next to the decision and explain
-why the ABI or native platform boundary requires it.
+## Workflow
 
-Pixel deliberately follows Zig's naming conventions instead of TigerStyle's
-snake-case function names so native code remains idiomatic alongside the
-standard library and generated platform bindings.
+Use the Docker workflow in the README. Run `make fmt` and `make test` before a
+consumer pin changes. Every ABI edit requires layout and compatibility coverage
+and a clear consumer migration.
 
-## Development
-
-Target stable Zig 0.16.0.
-
-Run `zig fmt build.zig src/` and `zig build test` before changing a pin in a
-consumer. Every ABI change requires layout and compatibility tests plus a clear
-migration note.
+Never commit generated output, caches, credentials, or machine-specific state.
+Never commit or push without explicit instruction. Preserve unrelated dirty
+work in every repository.
