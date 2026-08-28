@@ -14,19 +14,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const time = b.addModule("time", .{
-        .root_source_file = b.path("src/time.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
     const module_log = b.addModule("module_log", .{
         .root_source_file = b.path("src/module_log.zig"),
         .target = target,
         .optimize = optimize,
     });
     module_log.addImport("module_abi", module_abi);
-    module_log.addImport("time", time);
 
     const abi_tests = b.addTest(.{
         .root_module = module_abi,
@@ -38,12 +31,10 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    const time_tests = b.addTest(.{ .root_module = time });
     const module_log_tests = b.addTest(.{ .root_module = module_log });
 
     const test_step = b.step("test", "Run ABI tests");
     test_step.dependOn(&b.addRunArtifact(abi_tests).step);
     test_step.dependOn(&b.addRunArtifact(snapshot_tests).step);
-    test_step.dependOn(&b.addRunArtifact(time_tests).step);
     test_step.dependOn(&b.addRunArtifact(module_log_tests).step);
 }

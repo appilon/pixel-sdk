@@ -65,9 +65,8 @@ deliberate future graphics contract.
 
 - `snapshot_exchange`: single-producer, single-consumer latest-value triple
   buffer for update/render handoff.
-- `time`: shared monotonic clock and sleep operations.
-- `module_log`: allocation-free structured module event envelopes through the
-  host logger.
+- `module_log`: allocation-free structured event envelopes through the host
+  logger using a caller-supplied monotonic timestamp.
 
 Helpers contain reusable mechanics, never host or product policy. Renderer
 selection, model-authored artifacts, mesh/SDF formats, scene IDs, and the
@@ -84,15 +83,17 @@ project override, which the consumer Makefiles mount as `/pixel-sdk`:
 zig build --fork=../pixel-sdk
 ```
 
-The SDK itself provides a pinned Zig 0.16 Docker workflow:
+The SDK provides the canonical local `pixel-zig-build:0.16.0` image used by all
+Pixel Zig repositories. Consumer Makefiles build it from this checkout before
+adding their own toolchain layers.
 
 ```bash
 make fmt
 make test
 ```
 
-`make test` runs ABI layout/compatibility, snapshot concurrency, time, and
-structured logging tests.
+`make test` runs ABI layout/compatibility, snapshot concurrency, and structured
+logging tests. The SDK has no platform runtime or libc dependency.
 
 ## Versioning
 

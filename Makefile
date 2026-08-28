@@ -1,4 +1,4 @@
-IMAGE := pixel-sdk-build
+IMAGE ?= pixel-zig-build:0.16.0
 ZIG_GLOBAL_CACHE_DIR ?= $(HOME)/.cache/zig
 
 DOCKER_RUN = docker run --rm \

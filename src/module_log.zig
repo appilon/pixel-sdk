@@ -2,7 +2,6 @@
 
 const std = @import("std");
 const abi = @import("module_abi");
-const time = @import("time");
 
 const event_buffer_bytes: usize = 512;
 
@@ -12,6 +11,7 @@ pub fn write(host: *const abi.HostApi, message: []const u8) void {
 
 pub fn event(
     host: *const abi.HostApi,
+    timestamp_ns: i64,
     level: []const u8,
     component: []const u8,
     event_name: []const u8,
@@ -19,7 +19,7 @@ pub fn event(
     var buffer: [event_buffer_bytes]u8 = undefined;
     const message = formatEvent(
         &buffer,
-        time.monotonicNanoseconds(),
+        timestamp_ns,
         level,
         component,
         event_name,
@@ -29,7 +29,7 @@ pub fn event(
 
 fn formatEvent(
     buffer: []u8,
-    timestamp_ns: u64,
+    timestamp_ns: i64,
     level: []const u8,
     component: []const u8,
     event_name: []const u8,
@@ -71,6 +71,22 @@ test "event envelope is stable newline-delimited JSON payload" {
     );
     try std.testing.expectEqualStrings(
         "{\"ts_monotonic_ns\":123,\"level\":\"info\"," ++
+            "\"component\":\"quest.module.demo\",\"event\":\"module.ready\"}",
+        message,
+    );
+}
+
+test "event envelope accepts pre-update zero timestamp" {
+    var buffer: [event_buffer_bytes]u8 = undefined;
+    const message = try formatEvent(
+        &buffer,
+        0,
+        "info",
+        "quest.module.demo",
+        "module.ready",
+    );
+    try std.testing.expectEqualStrings(
+        "{\"ts_monotonic_ns\":0,\"level\":\"info\"," ++
             "\"component\":\"quest.module.demo\",\"event\":\"module.ready\"}",
         message,
     );
